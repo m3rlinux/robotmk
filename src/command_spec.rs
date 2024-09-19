@@ -1,4 +1,5 @@
 use std::convert::From;
+use std::ffi::OsString;
 use std::fmt::{Display, Formatter, Result};
 use std::process::Command;
 
@@ -6,6 +7,7 @@ use std::process::Command;
 pub struct CommandSpec {
     pub executable: String,
     pub arguments: Vec<String>,
+    envs: Vec<(String, String)>,
 }
 
 impl Display for CommandSpec {
@@ -18,6 +20,12 @@ impl From<&CommandSpec> for Command {
     fn from(command_spec: &CommandSpec) -> Self {
         let mut command = Self::new(&command_spec.executable);
         command.args(&command_spec.arguments);
+        command.envs(
+            command_spec
+                .envs
+                .iter()
+                .map(|(k, v)| (OsString::from(&k), OsString::from(&v))),
+        );
         command
     }
 }
@@ -26,6 +34,12 @@ impl From<&CommandSpec> for tokio::process::Command {
     fn from(command_spec: &CommandSpec) -> Self {
         let mut command = Self::new(&command_spec.executable);
         command.args(&command_spec.arguments);
+        command.envs(
+            command_spec
+                .envs
+                .iter()
+                .map(|(k, v)| (OsString::from(&k), OsString::from(&v))),
+        );
         command
     }
 }
@@ -35,6 +49,7 @@ impl CommandSpec {
         Self {
             executable: executable.as_ref().into(),
             arguments: vec![],
+            envs: vec![],
         }
     }
 
@@ -49,6 +64,11 @@ impl CommandSpec {
     {
         self.arguments
             .extend(arguments.into_iter().map(|s| s.as_ref().into()));
+        self
+    }
+
+    pub fn add_env(&mut self, key: String, value: String) -> &mut Self {
+        self.envs.push((key, value));
         self
     }
 }
@@ -67,11 +87,13 @@ mod tests {
                 String::from("--option"),
                 String::from("value"),
             ],
+            envs: vec![("RCC_REMOTE_ORIGIN".into(), "http://1.com".into())],
         };
-        assert_eq!(
-            format!("{command_spec}"),
-            "\"/my/binary\" \"mandatory\" \"--flag\" \"--option\" \"value\""
-        );
+        #[cfg(windows)]
+        let expected = "\"/my/binary\" \"mandatory\" \"--flag\" \"--option\" \"value\"";
+        #[cfg(unix)]
+        let expected = "RCC_REMOTE_ORIGIN=\"http://1.com\" \"/my/binary\" \"mandatory\" \"--flag\" \"--option\" \"value\"";
+        assert_eq!(format!("{command_spec}"), expected);
     }
 
     #[test]
@@ -93,6 +115,7 @@ mod tests {
                         String::from("--option"),
                         String::from("value"),
                     ],
+                    envs: vec![],
                 })
             ),
             format!("{:?}", expected)
@@ -106,6 +129,7 @@ mod tests {
             CommandSpec {
                 executable: String::from("/my/binary"),
                 arguments: vec![],
+                envs: vec![],
             }
         )
     }
@@ -115,6 +139,7 @@ mod tests {
         let mut command_spec = CommandSpec {
             executable: String::from("/my/binary"),
             arguments: vec![],
+            envs: vec![],
         };
         command_spec.add_argument("arg");
         assert_eq!(
@@ -122,6 +147,7 @@ mod tests {
             CommandSpec {
                 executable: String::from("/my/binary"),
                 arguments: vec!["arg".into()],
+                envs: vec![],
             }
         );
     }
@@ -131,6 +157,7 @@ mod tests {
         let mut command_spec = CommandSpec {
             executable: String::from("/my/binary"),
             arguments: vec![],
+            envs: vec![],
         };
         command_spec.add_arguments(vec!["arg1", "arg2"]);
         assert_eq!(
@@ -138,6 +165,7 @@ mod tests {
             CommandSpec {
                 executable: String::from("/my/binary"),
                 arguments: vec!["arg1".into(), "arg2".into()],
+                envs: vec![],
             }
         );
     }
